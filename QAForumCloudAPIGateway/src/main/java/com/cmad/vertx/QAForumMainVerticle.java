@@ -22,11 +22,10 @@ public class QAForumMainVerticle extends AbstractVerticle {
 
             String apiVersion = rctx.request().getParam("version");
             String resource = rctx.request().getParam("resource");
-            String routeTo = rctx.request().path().replace("/api/" + apiVersion,
-                    "");
+            String uri = rctx.request().uri().replace("/api/" + apiVersion, "");
 
             System.out.println("Processing the request for " + apiVersion + "/"
-                    + resource);
+                    + resource + " will be redirected to " + uri);
 
             HttpClient httpClient = vertx.createHttpClient();
 
@@ -40,12 +39,12 @@ public class QAForumMainVerticle extends AbstractVerticle {
                             String ipAddress = buff.toString();
                             System.out.println("GET version " + apiVersion
                                     + " of resource " + resource
-                                    + " with route to " + routeTo
-                                    + " end point is " + ipAddress);
+                                    + " with route to " + uri + " end point is "
+                                    + ipAddress);
 
                             HttpClientRequest getRequest = vertx
                                     .createHttpClient()
-                                    .get(ipAddress, routeTo, resp -> {
+                                    .get(ipAddress, uri, resp -> {
                                         resp.bodyHandler(data -> {
                                             HttpServerResponse responseToBeSent = rctx
                                                     .response()
@@ -62,7 +61,6 @@ public class QAForumMainVerticle extends AbstractVerticle {
                             getRequest.headers()
                                     .addAll(rctx.request().headers());
                             getRequest.end();
-
                         });
 
                     }).end();
