@@ -120,7 +120,7 @@ public class QAForumMainVerticle extends AbstractVerticle {
                                                 case 200:
                                                     System.out.println(
                                                             "Status OK");
-                                                    sendAndReceiveFromEndpoint(
+                                                    sendAndReceiveFromEndpointPOST(
                                                             rctx, apiVersion,
                                                             resource, routeTo);
                                                     break;
@@ -148,7 +148,81 @@ public class QAForumMainVerticle extends AbstractVerticle {
                             }).end();
                 }
             } else {
-                sendAndReceiveFromEndpoint(rctx, apiVersion, resource, routeTo);
+                sendAndReceiveFromEndpointPOST(rctx, apiVersion, resource,
+                        routeTo);
+            }
+
+        });
+
+        router.route("/api/:version/:resource/*").handler(BodyHandler.create());
+        router.put("/api/:version/:resource/*").handler(rctx -> {
+            String apiVersion = rctx.request().getParam("version");
+            String resource = rctx.request().getParam("resource");
+            String routeTo = rctx.request().path().replace("/api/" + apiVersion,
+                    "");
+
+            /*
+             * Check if jwt-auth-token header is there. If not there, throw
+             * unauthorized.
+             */
+
+            if (rctx.request().getHeader(CmadUtils.JWT_TOKEN) == null) {
+                System.out.println("Status Unauthorized");
+                rctx.response().setStatusCode(401)
+                        .setStatusMessage("Unauthorized")
+                        .end("Unauthorized Access, jwt-auth-token required in header.");
+
+            } else {
+
+                vertx.createHttpClient()
+                        .request(HttpMethod.GET, "metadata",
+                                "/computeMetadata/v1/project/attributes/v1-user")
+                        .putHeader("Metadata-Flavor", "Google").handler(res -> {
+
+                            res.bodyHandler(endPoint -> {
+                                String ipAddress = endPoint.toString();
+                                System.out.println(
+                                        "Auth: User Service located at "
+                                                + ipAddress);
+
+                                vertx.createHttpClient()
+                                        .request(HttpMethod.GET, ipAddress,
+                                                "/user/ticket")
+                                        .putHeader(CmadUtils.JWT_TOKEN,
+                                                rctx.request().getHeader(
+                                                        CmadUtils.JWT_TOKEN))
+                                        .handler(authResp -> {
+
+                                            switch (authResp.statusCode()) {
+
+                                            case 200:
+                                                System.out.println("Status OK");
+                                                sendAndReceiveFromEndpointPUT(
+                                                        rctx, apiVersion,
+                                                        resource, routeTo);
+                                                break;
+                                            case 401:
+                                                System.out.println(
+                                                        "Status Unauthorized");
+                                                rctx.response()
+                                                        .setStatusCode(401)
+                                                        .setStatusMessage(
+                                                                "Unauthorized")
+                                                        .end("Unauthorized Access");
+                                                break;
+                                            default:
+                                                rctx.response()
+                                                        .setStatusCode(
+                                                                authResp.statusCode())
+                                                        .setStatusMessage(
+                                                                authResp.statusMessage())
+                                                        .end("Failure");
+                                            }
+                                        }).end();
+
+                            });
+
+                        }).end();
             }
 
         });
@@ -169,7 +243,49 @@ public class QAForumMainVerticle extends AbstractVerticle {
      * @param resource
      * @param routeTo
      */
-    private void sendAndReceiveFromEndpoint(RoutingContext rctx,
+    private void sendAndReceiveFromEndpointPUT(RoutingContext rctx,
+            String apiVersion, String resource, String routeTo) {
+        HttpClient httpClient = vertx.createHttpClient();
+
+        httpClient
+                .request(HttpMethod.GET, "metadata",
+                        "/computeMetadata/v1/project/attributes/" + apiVersion
+                                + "-" + resource)
+                .putHeader("Metadata-Flavor", "Google").handler(res -> {
+
+                    res.bodyHandler(buff -> {
+                        String ipAddress = buff.toString();
+                        System.out.println("POST version " + apiVersion
+                                + " of resource " + resource + " with route to "
+                                + routeTo + " end point is " + ipAddress);
+                        HttpClientRequest postRequest = vertx.createHttpClient()
+                                .put(ipAddress, routeTo, resp -> {
+                                    resp.bodyHandler(data -> {
+                                        HttpServerResponse responseToBeSent = rctx
+                                                .response()
+                                                .setStatusCode(
+                                                        resp.statusCode())
+                                                .setStatusMessage(
+                                                        resp.statusMessage());
+                                        responseToBeSent.headers()
+                                                .addAll(resp.headers());
+                                        responseToBeSent.end(data);
+                                    });
+                                });
+                        postRequest.headers().addAll(rctx.request().headers());
+                        postRequest.end(rctx.getBodyAsString());
+                    });
+
+                }).end();
+    }
+
+    /**
+     * @param rctx
+     * @param apiVersion
+     * @param resource
+     * @param routeTo
+     */
+    private void sendAndReceiveFromEndpointPOST(RoutingContext rctx,
             String apiVersion, String resource, String routeTo) {
         HttpClient httpClient = vertx.createHttpClient();
 
